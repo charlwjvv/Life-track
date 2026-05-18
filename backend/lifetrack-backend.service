@@ -1,0 +1,17 @@
+[Unit]
+Description=LifeTrack Backend API Server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/charlwyn/openCodeDemo/backend
+ExecStart=/usr/bin/node --max-old-space-size=4096 /home/charlwyn/openCodeDemo/backend/dist/index.js
+Restart=always
+RestartSec=3
+Environment="PORT=3001"
+Environment="SUPABASE_URL=https://upgcveutdbjceihotbbl.supabase.co"
+Environment="SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVwZ2N2ZXV0ZGJqY2VpaG90YmJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMzEyNDksImV4cCI6MjA5NDcwNzI0OX0.nuxEeaCjmiiKX3f-87ZYEcrEHhXaPC48JdGw3pth3lQ"
+Environment="SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVwZ2N2ZXV0ZGJqY2VpaG90YmJsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTEzMTI0OSwiZXhwIjoyMDk0NzA3MjQ5fQ.byURY56IScmuyyblXWTHIpHt4hTkOKcb0qAWBXSiiMk"
+
+[Install]
+WantedBy=default.target
