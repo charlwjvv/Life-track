@@ -6,6 +6,18 @@
       "description": "Create a new opencode skill. Prompts for name and description, then writes SKILL.md.",
       "template": "Walk the user through creating a new skill. Ask for the skill name (lowercase, hyphen-separated, up to 64 chars) and a one-sentence description that covers what the skill does AND when to trigger it. Create the directory .opencode/skills/<name>/ and write a SKILL.md file with frontmatter (name, description) and a helpful body with instructions, examples, and references as appropriate. Then remind the user to restart opencode for the new skill to be loaded."
     },
+    "low": {
+      "description": "Switch to fast, low-power mode. Use for quick, simple tasks.",
+      "template": "Acknowledge the user has switched to LOW power mode. Use this session only for quick, simple tasks. Keep responses concise and efficient. Confirm: 'Switched to LOW mode — fast and light.'"
+    },
+    "medium": {
+      "description": "Switch to balanced medium-power mode. Default for general tasks.",
+      "template": "Acknowledge the user has switched to MEDIUM power mode. This is the balanced default. Use this for most tasks. Confirm: 'Switched to MEDIUM mode — balanced and ready.'"
+    },
+    "max": {
+      "description": "Switch to maximum power mode. Use for complex, thorough analysis.",
+      "template": "Acknowledge the user has switched to MAX power mode. Go deep, be thorough, explore edge cases, write complete solutions. No shortcuts. Confirm: 'Switched to MAX mode — full power engaged.'"
+    },
     "council": {
       "description": "Ask the LLM Council for a multi-perspective answer. Use when user asks about philosophy, advice, tradeoffs, vision, or wants a balanced deliberation. Trigger: /council <question>",
       "template": "The user has triggered /council. Strip the /council prefix from the message to extract the question. Call the council API with `curl -s -X POST http://localhost:3001/api/council -H \"Content-Type: application/json\" -d '{\"message\": \"<question>\"}' --max-time 120`. Parse the JSON response. Present the Chairman's synthesis (stage3) as the primary answer, formatted as a well-structured response. Optionally mention which agents contributed if the synthesis doesn't cover it. Do NOT show raw agent responses — only the synthesized answer. If the council is unavailable or the request fails, respond that the council is not available."

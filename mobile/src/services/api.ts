@@ -1,12 +1,23 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BASE_URL = 'http://172.22.24.77:3001/api';
+const FALLBACK_URL = 'https://lifetrack-v3.loca.lt/api';
+const URL_STORAGE_KEY = 'api_url';
+
+async function getBaseUrl(): Promise<string> {
+  const saved = await AsyncStorage.getItem(URL_STORAGE_KEY);
+  return saved || FALLBACK_URL;
+}
+
+async function setBaseUrl(url: string): Promise<void> {
+  await AsyncStorage.setItem(URL_STORAGE_KEY, url);
+}
 
 async function getToken(): Promise<string | null> {
   return AsyncStorage.getItem('token');
 }
 
 async function request(path: string, options: RequestInit = {}): Promise<any> {
+  const baseUrl = await getBaseUrl();
   const token = await getToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -14,10 +25,23 @@ async function request(path: string, options: RequestInit = {}): Promise<any> {
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Request failed');
-  return data;
+  try {
+    const res = await fetch(`${baseUrl}${path}`, { ...options, headers });
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Server error (${res.status}): please check your connection`);
+    }
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    return data;
+  } catch (err: any) {
+    if (err.message && (err.message.includes('Network') || err.message.includes('network') || err.message.includes('ECONNREFUSED') || err.message.includes('ENOTFOUND'))) {
+      throw new Error('Connection lost. Please check your internet.');
+    }
+    throw err;
+  }
 }
 
 export const api = {
@@ -97,3 +121,6 @@ export const api = {
 
   getWeeklyPlan: () => request('/coach/plan'),
 };
+
+// Re-export storage helpers for SettingsScreen
+export { getBaseUrl, setBaseUrl, URL_STORAGE_KEY, FALLBACK_URL };
