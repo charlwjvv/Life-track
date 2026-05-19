@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BASE_URL = 'https://passive-accomplish-crafts-tied.trycloudflare.com/api';
+const BASE_URL = 'http://172.22.24.77:3001/api';
 
 async function getToken(): Promise<string | null> {
   return AsyncStorage.getItem('token');

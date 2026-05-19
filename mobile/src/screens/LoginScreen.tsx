@@ -50,6 +50,22 @@ export default function LoginScreen({ navigation }: any) {
         <Text style={styles.buttonText}>{loading ? 'Signing in...' : 'Sign In'}</Text>
       </TouchableOpacity>
 
+      <TouchableOpacity style={styles.demoButton} onPress={async () => {
+        setLoading(true);
+        try {
+          const data = await api.login('demo@lifetrack.app', 'demo123456');
+          await AsyncStorage.setItem('token', data.token);
+          await AsyncStorage.setItem('user', JSON.stringify(data.user));
+          navigation.replace('Main');
+        } catch (err: any) {
+          Alert.alert('Error', err.message);
+        } finally {
+          setLoading(false);
+        }
+      }}>
+        <Text style={styles.demoButtonText}>Use Demo Account</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity onPress={() => navigation.navigate('Register')}>
         <Text style={styles.link}>Create an account</Text>
       </TouchableOpacity>
@@ -64,5 +80,7 @@ const styles = StyleSheet.create({
   input: { backgroundColor: theme.surface, borderRadius: 12, padding: 16, fontSize: 16, color: theme.text, marginBottom: 16, borderWidth: 1, borderColor: theme.border },
   button: { backgroundColor: theme.primary, borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 16, marginTop: 8 },
   buttonText: { color: theme.background, fontSize: 16, fontWeight: '600' },
+  demoButton: { backgroundColor: theme.surface, borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: theme.border },
+  demoButtonText: { color: theme.textSecondary, fontSize: 14, fontWeight: '500' },
   link: { color: theme.textSecondary, textAlign: 'center', fontSize: 14 },
 });

@@ -76,3 +76,19 @@ Migrated entire backend from Prisma/SQLite to Supabase (user provided keys, no m
 - URL: `https://upgcveutdbjceihotbbl.supabase.co`
 - Anon: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVwZ2N2ZXV0ZGJqY2VpaG90YmJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMzEyNDksImV4cCI6MjA5NDcwNzI0OX0.nuxEeaCjmiiKX3f-87ZYEcrEHhXaPC48JdGw3pth3lQ`
 - Service: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVwZ2N2ZXV0ZGJqY2VpaG90YmJsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTEzMTI0OSwiZXhwIjoyMDk0NzA3MjQ5fQ.byURY56IScmuyyblXWTHIpHt4hTkOKcb0qAWBXSiiMk`
+
+## Session 7 — 2026-05-19
+
+### What was done
+- Fixed mobile API URL from cloudflare tunnel to local IP (172.22.24.77:3001)
+- Added "Use Demo Account" button to LoginScreen
+- Verified all backend API endpoints work (auth, budget, goals, calories, coach)
+- TypeScript compiles without errors
+- Backend running on port 3001 with Supabase
+
+### Current state
+- Backend running with Supabase (all endpoints working)
+- Mobile app configured to connect to local backend
+- Demo account available: `demo@lifetrack.app` / `demo123456`
+- To build Android APK: need Java/Android SDK installed
+- To test: run `npx expo start` in mobile/ directory
