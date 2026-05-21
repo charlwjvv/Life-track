@@ -3,3 +3,5 @@ dist/
 *.db
 .env
 .expo/
+web/.next
+web/node_modules
