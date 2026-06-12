@@ -29,7 +29,7 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Serve the webapp frontend
+// Serve the webapp frontend (only in local dev, Vercel handles frontend separately)
 const webappDist = path.join(__dirname, '../../webapp/dist');
 app.use(express.static(webappDist));
 
@@ -38,8 +38,13 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(webappDist, 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Webapp: http://localhost:${PORT}`);
-  console.log(`API: http://localhost:${PORT}/api/health`);
-});
+// Only listen when run directly (not in Vercel serverless)
+if (!process.env.VERCEL) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Webapp: http://localhost:${PORT}`);
+    console.log(`API: http://localhost:${PORT}/api/health`);
+  });
+}
+
+export default app;
