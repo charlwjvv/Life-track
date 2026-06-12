@@ -1,7 +1,7 @@
 // In dev, proxy handles /api -> localhost:3001
 // In production, point to Vercel backend
 const BASE_URL = import.meta.env.PROD
-  ? 'https://lifetrack-cgo4acno8-charl-s-projects2.vercel.app/api'
+  ? 'https://lt-coach-api.vercel.app/api'
   : '/api';
 
 let authToken: string | null = localStorage.getItem('token');
