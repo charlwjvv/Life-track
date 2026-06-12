@@ -16,6 +16,9 @@ export default function Profile() {
   const [maxHeartRate, setMaxHeartRate] = useState('');
   const [restingHeartRate, setRestingHeartRate] = useState('');
   const [birthYear, setBirthYear] = useState('');
+  const [injuryStatus, setInjuryStatus] = useState('healthy');
+  const [injuryType, setInjuryType] = useState('');
+  const [injuryNotes, setInjuryNotes] = useState('');
 
   useEffect(() => {
     loadProfile();
@@ -33,6 +36,9 @@ export default function Profile() {
       setMaxHeartRate(String(p.maxHr || ''));
       setRestingHeartRate(String(p.restingHr || ''));
       setBirthYear(String(p.birthYear || ''));
+      setInjuryStatus(p.injuryStatus || 'healthy');
+      setInjuryType(p.injuryType || '');
+      setInjuryNotes(p.injuryNotes || '');
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -55,6 +61,9 @@ export default function Profile() {
         maxHeartRate: maxHeartRate ? parseInt(maxHeartRate) : undefined,
         restingHeartRate: restingHeartRate ? parseInt(restingHeartRate) : undefined,
         birthYear: birthYear ? parseInt(birthYear) : undefined,
+        injuryStatus: injuryStatus !== 'healthy' ? injuryStatus : 'healthy',
+        injuryType: injuryType || undefined,
+        injuryNotes: injuryNotes || undefined,
       });
       setSuccess('Profile updated successfully!');
     } catch (err: any) {
@@ -100,6 +109,8 @@ export default function Profile() {
                 <option value="10k">10K race</option>
                 <option value="half_marathon">Half Marathon</option>
                 <option value="marathon">Marathon</option>
+                <option value="ultra">Ultra (50km+)</option>
+                <option value="comrades">🏆 Comrades (90km)</option>
                 <option value="speed">Speed improvement</option>
                 <option value="weight_loss">Weight loss</option>
               </select>
@@ -131,6 +142,43 @@ export default function Profile() {
           <div className="form-group">
             <label>Birth Year</label>
             <input type="number" min="1950" max="2010" value={birthYear} onChange={e => setBirthYear(e.target.value)} placeholder="Optional, used for HR zones" />
+          </div>
+
+          {/* Injury Management */}
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 20, marginTop: 8 }}>
+            <h4 style={{ margin: '0 0 12px', fontSize: 15, color: injuryStatus !== 'healthy' ? '#f97316' : 'var(--text-secondary)' }}>
+              {injuryStatus !== 'healthy' ? '⚠️ Injury Management Active' : '🩺 Injury Management'}
+            </h4>
+            <div className="form-group">
+              <label>Status</label>
+              <select value={injuryStatus} onChange={e => {
+                setInjuryStatus(e.target.value);
+                if (e.target.value === 'healthy') {
+                  setInjuryType('');
+                  setInjuryNotes('');
+                }
+              }}>
+                <option value="healthy">Healthy — no issues</option>
+                <option value="niggled">Niggled — minor discomfort, can run</option>
+                <option value="injured">Injured — stop running</option>
+                <option value="recovering">Recovering — easing back in</option>
+              </select>
+            </div>
+            {injuryStatus !== 'healthy' && (
+              <>
+                <div className="form-group">
+                  <label>Injury Type</label>
+                  <input type="text" value={injuryType} onChange={e => setInjuryType(e.target.value)}
+                    placeholder="e.g. Shin splints, IT band, Plantar fasciitis..." />
+                </div>
+                <div className="form-group">
+                  <label>Notes</label>
+                  <textarea value={injuryNotes} onChange={e => setInjuryNotes(e.target.value)}
+                    placeholder="Any details about the injury, treatment plan, or recovery timeline..."
+                    rows={3} style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', width: '100%', resize: 'vertical' }} />
+                </div>
+              </>
+            )}
           </div>
 
           <button type="submit" className="btn btn-primary btn-block" disabled={saving}>

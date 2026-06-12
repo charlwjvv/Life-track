@@ -27,7 +27,7 @@ coachRouter.use(authenticate);
 async function getCoachProfile(userId: string): Promise<CoachProfile> {
   const { data: profile } = await supabase
     .from('profiles')
-    .select('experience_level, max_heart_rate, resting_heart_rate, weight_kg, goal_type, weekly_goal_km, birth_year')
+    .select('experience_level, max_heart_rate, resting_heart_rate, weight_kg, goal_type, weekly_goal_km, birth_year, injury_status, injury_type, injury_notes, injury_since, return_to_run_date')
     .eq('id', userId)
     .single();
 
@@ -39,6 +39,11 @@ async function getCoachProfile(userId: string): Promise<CoachProfile> {
     goalType: profile?.goal_type || 'general',
     weeklyGoalKm: profile?.weekly_goal_km || 20,
     birthYear: profile?.birth_year || undefined,
+    injuryStatus: profile?.injury_status || 'healthy',
+    injuryType: profile?.injury_type || undefined,
+    injuryNotes: profile?.injury_notes || undefined,
+    injurySince: profile?.injury_since || undefined,
+    returnToRunDate: profile?.return_to_run_date || undefined,
   };
 }
 
@@ -380,10 +385,13 @@ const profileSchema = z.object({
   maxHeartRate: z.number().positive().optional(),
   restingHeartRate: z.number().positive().optional(),
   weightKg: z.number().positive().optional(),
-  goalType: z.enum(['general', '5k', '10k', 'half_marathon', 'marathon', 'weight_loss', 'speed']).optional(),
+  goalType: z.enum(['general', '5k', '10k', 'half_marathon', 'marathon', 'ultra', 'comrades', 'weight_loss', 'speed']).optional(),
   weeklyGoalKm: z.number().positive().optional(),
   birthYear: z.number().int().min(1900).max(2026).optional(),
   name: z.string().optional(),
+  injuryStatus: z.enum(['healthy', 'niggled', 'injured', 'recovering']).optional(),
+  injuryType: z.string().optional(),
+  injuryNotes: z.string().optional(),
 });
 
 coachRouter.put('/profile', async (req: AuthRequest, res: Response) => {
@@ -399,6 +407,17 @@ coachRouter.put('/profile', async (req: AuthRequest, res: Response) => {
     if (data.weeklyGoalKm !== undefined) updates.weekly_goal_km = data.weeklyGoalKm;
     if (data.birthYear !== undefined) updates.birth_year = data.birthYear;
     if (data.name !== undefined) updates.name = data.name;
+    if (data.injuryStatus !== undefined) updates.injury_status = data.injuryStatus;
+    if (data.injuryType !== undefined) updates.injury_type = data.injuryType;
+    if (data.injuryNotes !== undefined) updates.injury_notes = data.injuryNotes;
+    // Set injury start date when injury status changes to injured
+    if (data.injuryStatus === 'injured') updates.injury_since = new Date().toISOString().split('T')[0];
+    if (data.injuryStatus === 'healthy') {
+      updates.injury_type = null;
+      updates.injury_notes = null;
+      updates.injury_since = null;
+      updates.return_to_run_date = null;
+    }
 
     const { data: profile, error } = await supabase
       .from('profiles')

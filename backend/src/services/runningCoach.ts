@@ -12,8 +12,9 @@
  */
 
 export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced';
-export type GoalType = 'general' | '5k' | '10k' | 'half_marathon' | 'marathon' | 'weight_loss' | 'speed';
+export type GoalType = 'general' | '5k' | '10k' | 'half_marathon' | 'marathon' | 'ultra' | 'comrades' | 'weight_loss' | 'speed';
 export type RunType = 'easy' | 'tempo' | 'interval' | 'long_run' | 'recovery' | 'race' | 'fartlek';
+export type InjuryStatus = 'healthy' | 'niggled' | 'injured' | 'recovering';
 export type WorkoutIntensity = 'low' | 'moderate' | 'high' | 'maximal';
 
 export interface CoachProfile {
@@ -24,6 +25,11 @@ export interface CoachProfile {
   goalType: GoalType;
   weeklyGoalKm: number;
   birthYear?: number;
+  injuryStatus?: InjuryStatus;
+  injuryType?: string;
+  injuryNotes?: string;
+  injurySince?: string;
+  returnToRunDate?: string;
 }
 
 export interface RunRecord {
@@ -163,50 +169,86 @@ export function generateWeeklyPlan(
 ): { plan: DayPlan[]; phase: string; weekInCycle: number; reasoning: string } {
   const now = new Date();
   const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() + (weekOffset * 7));
+  
+  // Ultra uses 4-week cycles for consistency, but Comrades uses 16-week macrocycles
+  // We'll use 4-week cycle internally (matches the existing system)
   const weekInCycle = Math.floor(Math.abs(startOfWeek.getTime() / (7 * 24 * 60 * 60 * 1000))) % 4;
   const phase = getTrainingPhase(weekInCycle);
   const zones = calculateHrZones(profile);
+  const isUltra = profile.goalType === 'ultra' || profile.goalType === 'comrades';
+  const isInjured = profile.injuryStatus === 'injured' || profile.injuryStatus === 'recovering';
   
-  const recentRuns = runs.slice(0, 10); // last 10 runs
+  const recentRuns = runs.slice(0, 10);
   const avgWeeklyKm = recentRuns.length > 0 
     ? recentRuns.reduce((sum, r) => sum + metersToKm(r.distance), 0) / Math.max(1, recentRuns.length) * 3
-    : profile.weeklyGoalKm; // estimate weekly volume
+    : profile.weeklyGoalKm;
   
-  // Adjust weekly goal based on phase
+  // Adjust weekly goal based on phase and injury
   let weeklyKm = profile.weeklyGoalKm;
-  if (phase === 'Recovery' && avgWeeklyKm > 0) {
-    weeklyKm = Math.round(avgWeeklyKm * 0.55); // 55% of normal
+  
+  if (isInjured) {
+    // Injury protocol: drastically reduce or modify
+    weeklyKm = profile.injuryStatus === 'injured' ? Math.round(profile.weeklyGoalKm * 0.2) : Math.round(profile.weeklyGoalKm * 0.5);
+  } else if (phase === 'Recovery' && avgWeeklyKm > 0) {
+    weeklyKm = Math.round(avgWeeklyKm * 0.55);
   } else if (phase === 'Peak' && avgWeeklyKm > 0) {
-    weeklyKm = Math.round(Math.min(avgWeeklyKm * 1.08, avgWeeklyKm + 5)); // 8% increase, capped
+    weeklyKm = Math.round(Math.min(avgWeeklyKm * 1.08, avgWeeklyKm + (isUltra ? 8 : 5)));
   } else if (recentRuns.length >= 4) {
-    // 10% rule: don't increase more than 10% from actual average
     weeklyKm = Math.min(profile.weeklyGoalKm, Math.round(avgWeeklyKm * 1.1));
   }
 
   const experienceMultiplier = profile.experienceLevel === 'beginner' ? 0.8 
     : profile.experienceLevel === 'advanced' ? 1.2 : 1.0;
 
-  // Determine workout schedule based on experience and goal
   const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   
   // How many running days per week
-  const runDays = profile.experienceLevel === 'beginner' ? 3 
-    : profile.experienceLevel === 'intermediate' ? 4 
-    : 5;
+  let runDays: number;
+  if (isInjured) {
+    runDays = profile.injuryStatus === 'injured' ? 0 : 3; // recovery: cross-train + short runs
+  } else if (isUltra) {
+    runDays = profile.experienceLevel === 'beginner' ? 4 : 5; // ultra needs more volume
+  } else {
+    runDays = profile.experienceLevel === 'beginner' ? 3 
+      : profile.experienceLevel === 'intermediate' ? 4 : 5;
+  }
   
-  // When to schedule each workout type
   const workoutSchedule: Record<string, string> = {};
   
-  if (runDays >= 3) {
+  if (isInjured) {
+    // Injury protocol: all easy, focus on cross-training
+    if (profile.injuryStatus === 'injured') {
+      workoutSchedule['Monday'] = 'cross_train';
+      workoutSchedule['Wednesday'] = 'cross_train';
+      workoutSchedule['Friday'] = 'cross_train';
+    } else {
+      // Recovering: return to run gradually
+      workoutSchedule['Monday'] = 'easy';
+      workoutSchedule['Wednesday'] = 'easy';
+      workoutSchedule['Friday'] = 'easy';
+      workoutSchedule['Saturday'] = 'long_run';
+    }
+  } else if (isUltra) {
+    // Ultra/Comrades schedule: back-to-back long runs on weekends
+    workoutSchedule['Monday'] = 'recovery';
+    workoutSchedule['Wednesday'] = 'tempo';
+    workoutSchedule['Thursday'] = 'easy';
+    workoutSchedule['Friday'] = 'easy';
+    workoutSchedule['Saturday'] = 'long_run';
+    workoutSchedule['Sunday'] = 'back_to_back';
+    if (runDays >= 5) {
+      workoutSchedule['Tuesday'] = 'easy';
+    }
+  } else if (runDays >= 3) {
     workoutSchedule['Monday'] = 'easy';
     workoutSchedule['Wednesday'] = profile.goalType === 'marathon' || profile.goalType === 'half_marathon' ? 'tempo' : 'interval';
     workoutSchedule['Friday'] = 'easy';
     workoutSchedule['Saturday'] = 'long_run';
   }
-  if (runDays >= 4) {
+  if (!isUltra && !isInjured && runDays >= 4) {
     workoutSchedule['Thursday'] = profile.goalType === 'marathon' ? 'easy' : 'tempo';
   }
-  if (runDays >= 5) {
+  if (!isUltra && !isInjured && runDays >= 5) {
     workoutSchedule['Tuesday'] = 'recovery';
   }
 
@@ -335,16 +377,58 @@ function createWorkoutForDay(
       };
     }
     case 'long_run': {
-      const longDist = getLongRunDistance(weeklyKm, phase);
+      const isUltra = profile.goalType === 'ultra' || profile.goalType === 'comrades';
+      let longDist = getLongRunDistance(weeklyKm, phase);
+      if (isUltra) {
+        // Ultra long runs are longer: up to 40-50% of weekly volume
+        const ultraLongRun = weeklyKm * (phase === 'Peak' ? 0.4 : phase === 'Recovery' ? 0.2 : 0.3);
+        longDist = Math.round(Math.max(longDist, ultraLongRun));
+      }
+      const hours = (longDist * (profile.experienceLevel === 'beginner' ? 7 : 5.5)) / 60;
       return {
         ...base,
         type: 'Long Run',
-        description: `Long endurance run — ${longDist}km at aerobic pace`,
+        description: isUltra
+          ? `Long endurance run — ${longDist}km (~${hours.toFixed(1)}h). Time on feet builds ultra resilience.`
+          : `Long endurance run — ${longDist}km at aerobic pace`,
         distanceKm: longDist, durationMin: Math.round(longDist * (profile.experienceLevel === 'beginner' ? 7 : 5.5)),
-        intensity: 'moderate',
+        intensity: isUltra ? 'low' : 'moderate',
         hrZone: 'Zone 2',
         targetHrRange: `${zones.zone2[0]}-${zones.zone2[1]} bpm`,
-        notes: 'Keep the effort easy. Goal is time on feet, not speed. Practice nutrition/hydration if > 90min.',
+        notes: isUltra
+          ? 'Ultra long run: keep HR strictly in Zone 2. Practice race-day nutrition (real food + electrolytes). Walk uphills if needed. The adaptation comes from time on feet, not speed.'
+          : 'Keep the effort easy. Goal is time on feet, not speed. Practice nutrition/hydration if > 90min.',
+      };
+    }
+    case 'back_to_back': {
+      // Second half of back-to-back long runs (ultra/Comrades specific)
+      // ~60% of Saturday's long run distance, easy effort
+      const satPlan = weeklyKm * (phase === 'Peak' ? 0.35 : phase === 'Recovery' ? 0.15 : 0.25);
+      const b2bDist = Math.round(satPlan * 0.65 * 10) / 10;
+      const hours = (b2bDist * (profile.experienceLevel === 'beginner' ? 7 : 6)) / 60;
+      return {
+        ...base,
+        type: 'Back-to-Back',
+        description: `Back-to-back long run — ${b2bDist.toFixed(1)}km easy effort (~${hours.toFixed(1)}h). Run on tired legs — this builds ultra-specific endurance.`,
+        distanceKm: b2bDist, durationMin: Math.round(b2bDist * 6.5),
+        intensity: 'low',
+        hrZone: 'Zone 2',
+        targetHrRange: `${zones.zone2[0]}-${zones.zone2[1]} bpm`,
+        notes: 'This is the most important workout for ultra training. Start slow and stay in Zone 2. Practice race-day nutrition. The goal is time on feet, not speed. If pacing feels hard, walk.',
+      };
+    }
+    case 'cross_train': {
+      return {
+        ...base,
+        type: 'Cross-Training',
+        description: 'Injury recovery: cross-training session (swimming 30-40min, cycling easy, or strength training upper body)',
+        distanceKm: null, durationMin: 35,
+        intensity: 'low',
+        hrZone: 'Zone 1-2',
+        targetHrRange: `${zones.zone1[0]}-${zones.zone2[1]} bpm`,
+        notes: profile.injuryType 
+          ? `Your ${profile.injuryType} needs rest from impact. Swimming maintains aerobic fitness with zero impact. Avoid any movement that causes pain.`
+          : 'Cross-training maintains aerobic fitness while giving your running muscles and connective tissue a break. Focus on form and mobility.',
       };
     }
     case 'recovery': {
@@ -377,6 +461,43 @@ function generatePhaseReasoning(
 ): string {
   const age = getAge(profile.birthYear);
   const maxHr = profile.maxHr || estimateMaxHr(age);
+  const isUltra = profile.goalType === 'ultra' || profile.goalType === 'comrades';
+  const isInjured = profile.injuryStatus === 'injured' || profile.injuryStatus === 'recovering';
+  
+  // Injury recovery reasoning
+  if (profile.injuryStatus === 'injured') {
+    return `⚠️ INJURY PROTOCOL: You're currently managing "${profile.injuryType || 'an injury'}" — no running this week. Focus on cross-training (swim, bike, upper body strength) to maintain aerobic fitness without impact. Rest is treatment. If you run through pain, you'll lose more time.`;
+  }
+  if (profile.injuryStatus === 'recovering') {
+    return `🔄 RETURN-TO-RUN: Easing back from "${profile.injuryType || 'your injury'}". This week is reduced volume (${weeklyKm}km) with NO hard efforts. Follow the rule: if it hurts, stop and walk. Three pain-free runs in a row → next week add 10% volume.`;
+  }
+  
+  // Ultra-specific reasoning
+  if (isUltra) {
+    switch (phase) {
+      case 'Base Building':
+        return `🏔️ ULTRA BASE: Week ${weekInCycle + 1} of 4 — building your ultra foundation. ` +
+          `Volume: ~${weeklyKm}km with back-to-back long runs on weekends (the key ultra workout). ` +
+          `Keep intensity low — all running should be at conversational pace (Zone 2 at ${Math.round(maxHr * 0.6)}-${Math.round(maxHr * 0.7)} bpm). ` +
+          `Your body is adapting to handle time on feet, not speed. This is the most important adaptation for ${profile.goalType === 'comrades' ? 'Comrades' : 'ultra'} distance.`;
+      case 'Development':
+        return `🏔️ ULTRA DEVELOPMENT: Week ${weekInCycle + 1} of 4 — building resilience. ` +
+          `Volume continues to climb (${totalPlannedKm}km this week). The Saturday long run + Sunday back-to-back is your most important stimulus. ` +
+          `Focus on nutrition practice during long runs: test what foods your gut tolerates. ` +
+          `Add walk breaks on steep hills — this is race strategy, not weakness.`;
+      case 'Peak':
+        return `🏔️ ULTRA PEAK: Week ${weekInCycle + 1} of 4 — highest volume (~${weeklyKm}km). ` +
+          `Peak weekend: Saturday long run + Sunday back-to-back will be your longest combined mileage. ` +
+          `Sleep and nutrition are critical. After this week: recovery at 55% volume. ` +
+          `Trust the training — the adaptations from this week will materialize during the recovery week.`;
+      case 'Recovery':
+        return `🛌 ULTRA RECOVERY: Volume drops to ${weeklyKm}km (55% of peak). No back-to-back, no intensity. ` +
+          `This is when your body supercompensates — bone density increases, connective tissue strengthens, glycogen stores super-load. ` +
+          `Do not skip this. For ${profile.goalType === 'comrades' ? 'Comrades' : 'ultra'} training, recovery weeks are mandatory, not optional.`;
+      default:
+        return `Phase: ${phase}. Ultra training focus: time on feet, nutrition practice, consistent volume ~${weeklyKm}km.`;
+    }
+  }
   
   switch (phase) {
     case 'Base Building':
@@ -648,6 +769,49 @@ function getRaceSpecificTips(profile: CoachProfile, weeklyKm: number, avgPace: s
         priority: 'high',
       });
       break;
+    case 'ultra':
+    case 'comrades': {
+      const isComrades = profile.goalType === 'comrades';
+      tips.push({
+        category: 'strategy',
+        content: isComrades
+          ? `COMRADES TRAINING: Your goal is 90km with a 12-hour cutoff. Key workouts: (1) Back-to-back long runs (Sat 30-35km + Sun 20-25km) build ultra-specific resilience. (2) Time-on-feet sessions up to 5-6 hours. (3) Practise race-pace (target ~${weeklyKm > 70 ? '6:30-7:00' : '7:30-8:30'}/km) on cutback weeks.`
+          : `ULTRA TRAINING: Your goal is 50km+. Key workouts: (1) Back-to-back long runs build fatigue resistance. (2) Time-on-feet: build to 4+ hour runs. (3) Practice race nutrition early — your gut needs training too.`,
+        reasoning: isComrades
+          ? 'The Comrades Marathon is unique: 90km of rolling hills with a strict 12-hour cutoff. Success depends on: (a) back-to-back long runs to build bone/tendon resilience, (b) learning to run efficiently on tired legs, and (c) nailing nutrition (real food, not just gels) for 9-12 hours of continuous effort.'
+          : 'Ultra running success is 70% aerobic fitness, 20% nutrition strategy, and 10% mental resilience. Back-to-back long runs are the single most effective training stimulus because they simulate the fatigue state of the latter half of your race.',
+        priority: 'high',
+      });
+      if (weeklyKm < 60) {
+        tips.push({
+          category: 'training',
+          content: `For ${isComrades ? 'Comrades (90km)' : 'an ultra'}, most finishers train at 70-100km/week. You're at ~${weeklyKm}km. Prioritize consistent weekly volume before adding intensity.`,
+          reasoning: `The primary predictor of ${isComrades ? 'Comrades' : 'ultra'} success is total weekly volume. Bone density, tendon strength, and fat oxidation adapt slowly (12-16 weeks). Build volume at 10%/week before introducing back-to-back long runs.`,
+          priority: 'high',
+        });
+      }
+      if (isComrades) {
+        tips.push({
+          category: 'strategy',
+          content: `The Comrades is net downhill (Pietermaritzburg to Durban) but has significant climbs, including Polly Shortts. Incorporate downhill running practice — it stresses your quads differently than flat running. Do 3-5km downhill repeats at race effort once every 2 weeks.`,
+          reasoning: 'Eccentric loading from downhill running causes unique muscle damage. Practising downhill technique reduces post-race soreness and prevents "dead quads" around the 70km mark — the most common reason for DNF at Comrades.',
+          priority: 'high',
+        });
+        tips.push({
+          category: 'strategy',
+          content: `Comrades cutoff pace: 12 hours for 90km = 8:00/km average (including aid station stops). In training, learn to negative-split: start at 8:30-9:00/km, speed up to 7:30-8:00/km in the second half. The first 40km should feel easy.`,
+          reasoning: 'The Comrades is won or lost in the second half. Most runners go out too fast due to adrenaline and crowd energy. A conservative start with 5-10s/km positive split in the first half correlates with a faster overall time. Walking early (before you need to) preserves energy.',
+          priority: 'high',
+        });
+        tips.push({
+          category: 'strategy',
+          content: `Ultra nutrition: Train your gut with real food. Target 60-90g carbs/hour (∼240-360 cal/hr) from a mix of sources: gels, bananas, potatoes, sports drink. Practice with the same aid-station foods you'll use on race day. Add sodium: 500-1000mg/hr in hot conditions.`,
+          reasoning: 'For 9-12 hours of exercise, gel-only nutrition causes GI distress. Real food (potatoes, bananas, watermelon) provides variety and is often better tolerated. Sodium replacement prevents hyponatremia — a leading medical issue at Comrades.',
+          priority: 'high',
+        });
+      }
+      break;
+    }
     case 'speed':
       tips.push({
         category: 'strategy',
@@ -833,5 +997,17 @@ export function getDashboardSummary(
       pace: r.averageSpeed ? getPaceFromSpeed(r.averageSpeed) : '--:--',
       hr: r.averageHeartrate,
     })),
+    injuryStatus: profile.injuryStatus || 'healthy',
+    injuryType: profile.injuryType || undefined,
+    isUltraGoal: profile.goalType === 'ultra' || profile.goalType === 'comrades',
+    goalLabel: profile.goalType === 'comrades' ? 'Comrades (90km)' 
+      : profile.goalType === 'ultra' ? 'Ultra (50km+)'
+      : profile.goalType === 'marathon' ? 'Marathon'
+      : profile.goalType === 'half_marathon' ? 'Half Marathon'
+      : profile.goalType === '5k' ? '5K'
+      : profile.goalType === '10k' ? '10K'
+      : profile.goalType === 'speed' ? 'Speed'
+      : profile.goalType === 'weight_loss' ? 'Weight Loss'
+      : 'General Fitness',
   };
 }

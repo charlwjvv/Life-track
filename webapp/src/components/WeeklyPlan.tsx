@@ -50,7 +50,7 @@ export default function WeeklyPlan() {
       </div>
 
       {/* Phase Banner */}
-      <div className={`phase-banner ${phaseClass}`}>
+      <div className={`phase-banner ${phaseClass} ${plan.phase?.includes('INJURY') || plan.phase?.includes('RETURN') ? 'injury' : ''}`}>
         <strong>{plan.phase} — Week {plan.weekInCycle} of 4</strong>
         <div style={{ marginTop: 4, opacity: 0.9 }}>{plan.reasoning}</div>
       </div>
@@ -77,6 +77,18 @@ export default function WeeklyPlan() {
             <div className="day-info">
               <div className="day-type">Rest</div>
               <div className="day-desc">{day.description}</div>
+            </div>
+          ) : day.type === 'Cross-Training' ? (
+            <div className="day-info">
+              <div className="day-type" style={{ color: '#f97316' }}>🔄 Cross-Training</div>
+              <div className="day-desc">{day.description}</div>
+              {day.notes && <div className="day-hr" style={{ marginTop: 2 }}>{day.notes}</div>}
+            </div>
+          ) : day.type === 'Back-to-Back' ? (
+            <div className="day-info">
+              <div className="day-type" style={{ color: '#8b5cf6' }}>🏔️ Back-to-Back</div>
+              <div className="day-desc">{day.description}</div>
+              {day.notes && <div className="day-hr" style={{ marginTop: 2 }}>{day.notes}</div>}
             </div>
           ) : (
             <div className="day-info">

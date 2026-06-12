@@ -36,6 +36,35 @@ export default function Dashboard() {
         <p>Your training and nutrition at a glance</p>
       </div>
 
+      {/* Injury Banner */}
+      {data.injuryStatus && data.injuryStatus !== 'healthy' && (
+        <div className="phase-banner injury" style={{ marginBottom: 20 }}>
+          <strong>
+            {data.injuryStatus === 'injured' ? '🛑 Injured' : data.injuryStatus === 'recovering' ? '🔄 Recovering' : '⚠️ Niggle'}
+          </strong>
+          {data.injuryType && <span> — {data.injuryType}</span>}
+          {data.injuryNotes && <div style={{ marginTop: 4, opacity: 0.9, fontSize: 13 }}>{data.injuryNotes}</div>}
+          <div style={{ marginTop: 6 }}>
+            <Link to="/profile" style={{ textDecoration: 'underline', opacity: 0.8, fontSize: 13 }}>
+              Update injury status →
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Goal Badge */}
+      {data.isUltraGoal && (
+        <div className="stat-card" style={{ marginBottom: 20, background: 'linear-gradient(135deg, #1a1a3e, #0f0f23)', border: '1px solid #8b5cf640' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <span className="stat-label">{data.goalLabel || 'Ultra Training'}</span>
+              <div style={{ fontSize: 12, marginTop: 2, opacity: 0.6 }}>Back-to-back long runs · Time on feet · Nutrition practice</div>
+            </div>
+            <span style={{ fontSize: 24 }}>🏔️</span>
+          </div>
+        </div>
+      )}
+
       {/* Stats Grid */}
       <div className="grid-4 section">
         <div className="stat-card">
