@@ -1,10 +1,151 @@
 import { Router, Response } from 'express';
+import { z } from 'zod';
 import { supabase } from '../db';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import {
+  generateWeeklyPlan,
+  analyzeRuns,
+  getDashboardSummary,
+  getMileageTrend,
+  getPaceDistribution,
+  getWorkoutTypeBreakdown,
+  getHrZoneDistribution,
+  CoachProfile,
+  RunRecord,
+} from '../services/runningCoach';
+import {
+  getDailyNutritionSummary,
+  getWeeklyNutritionReview,
+  getNutritionAnalytics,
+  NutritionRecommendation,
+} from '../services/nutritionCoach';
 
 export const coachRouter = Router();
 coachRouter.use(authenticate);
 
+// ─── Helper: get user profile for coaching personalization ───
+async function getCoachProfile(userId: string): Promise<CoachProfile> {
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('experience_level, max_heart_rate, resting_heart_rate, weight_kg, goal_type, weekly_goal_km, birth_year')
+    .eq('id', userId)
+    .single();
+
+  return {
+    experienceLevel: profile?.experience_level || 'beginner',
+    maxHr: profile?.max_heart_rate || undefined,
+    restingHr: profile?.resting_heart_rate || undefined,
+    weightKg: profile?.weight_kg || undefined,
+    goalType: profile?.goal_type || 'general',
+    weeklyGoalKm: profile?.weekly_goal_km || 20,
+    birthYear: profile?.birth_year || undefined,
+  };
+}
+
+// ─── Helper: get runs for a period ───
+async function getRunsForPeriod(userId: string, startDate: Date, endDate: Date): Promise<RunRecord[]> {
+  const { data: runs } = await supabase
+    .from('runs')
+    .select('*')
+    .eq('user_id', userId)
+    .gte('start_date', startDate.toISOString())
+    .lt('start_date', endDate.toISOString())
+    .order('start_date', { ascending: true });
+
+  return (runs || []).map(r => ({
+    id: r.id,
+    distance: r.distance,
+    movingTime: r.moving_time,
+    startDate: r.start_date,
+    averageSpeed: r.average_speed,
+    averageHeartrate: r.average_heartrate,
+    source: r.source || 'strava',
+    runType: r.run_type || 'easy',
+    perceivedEffort: r.perceived_effort,
+    notes: r.notes,
+  }));
+}
+
+async function getAllRuns(userId: string): Promise<RunRecord[]> {
+  const { data: runs } = await supabase
+    .from('runs')
+    .select('*')
+    .eq('user_id', userId)
+    .order('start_date', { ascending: false })
+    .limit(200);
+
+  return (runs || []).map(r => ({
+    id: r.id,
+    distance: r.distance,
+    movingTime: r.moving_time,
+    startDate: r.start_date,
+    averageSpeed: r.average_speed,
+    averageHeartrate: r.average_heartrate,
+    source: r.source || 'strava',
+    runType: r.run_type || 'easy',
+    perceivedEffort: r.perceived_effort,
+    notes: r.notes,
+  }));
+}
+
+function getWeekBounds(offset: number = 0): { start: Date; end: Date } {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() + (offset * 7));
+  const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+  return { start, end };
+}
+
+// ─── 1. Dashboard summary ───
+coachRouter.get('/dashboard', async (req: AuthRequest, res: Response) => {
+  try {
+    const profile = await getCoachProfile(req.userId!);
+    const { start, end } = getWeekBounds();
+    const weekRuns = await getRunsForPeriod(req.userId!, start, end);
+    const allRuns = await getAllRuns(req.userId!);
+    
+    const summary = getDashboardSummary(weekRuns, allRuns, profile);
+    
+    // Get today's nutrition
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+    const todayRuns = await getRunsForPeriod(req.userId!, todayStart, todayEnd);
+    const nutrition = getDailyNutritionSummary(todayRuns, profile);
+
+    res.json({ ...summary, nutrition });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── 2. Weekly plan (enhanced with scientific periodization) ───
+coachRouter.get('/plan', async (req: AuthRequest, res: Response) => {
+  try {
+    const profile = await getCoachProfile(req.userId!);
+    const weekOffset = parseInt(req.query.week as string) || 0;
+    const { start, end } = getWeekBounds(weekOffset);
+    const weekRuns = await getRunsForPeriod(req.userId!, start, end);
+    const allRuns = await getAllRuns(req.userId!);
+    
+    const result = generateWeeklyPlan(weekRuns, profile, weekOffset);
+    const totalPlanned = result.plan.reduce((sum, d) => sum + (d.distanceKm || 0), 0);
+    const completedKm = weekRuns.reduce((sum, r) => sum + r.distance / 1000, 0);
+
+    res.json({
+      plan: result.plan,
+      phase: result.phase,
+      weekInCycle: result.weekInCycle,
+      reasoning: result.reasoning,
+      weeklyGoal: profile.weeklyGoalKm,
+      totalPlannedKm: Math.round(totalPlanned * 10) / 10,
+      completedKm: Math.round(completedKm * 10) / 10,
+      progress: Math.min(100, Math.round((completedKm / Math.max(totalPlanned, 1)) * 100)),
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── 3. Coach analysis & tips (enhanced) ───
 coachRouter.get('/advice', async (req: AuthRequest, res: Response) => {
   try {
     const { data, error } = await supabase
@@ -21,128 +162,333 @@ coachRouter.get('/advice', async (req: AuthRequest, res: Response) => {
   }
 });
 
-coachRouter.post('/generate', async (req: AuthRequest, res: Response) => {
+// Generate new analysis
+coachRouter.post('/analyze', async (req: AuthRequest, res: Response) => {
   try {
-    const now = new Date();
-    const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
-    const endOfWeek = new Date(startOfWeek.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-    const { data: runs } = await supabase
-      .from('runs')
-      .select('*')
-      .eq('user_id', req.userId!)
-      .gte('start_date', startOfWeek.toISOString())
-      .lt('start_date', endOfWeek.toISOString())
-      .order('start_date', { ascending: true });
-
-    const runList = runs || [];
-    const totalDistance = runList.reduce((sum, r) => sum + r.distance, 0) / 1000;
-    const totalTime = runList.reduce((sum, r) => sum + r.moving_time, 0) / 60;
-    const avgSpeed = runList.length > 0 ? runList.reduce((sum, r) => sum + (r.average_speed || 0), 0) / runList.length : 0;
-    const avgHr = runList.length > 0 ? runList.reduce((sum, r) => sum + (r.average_heartrate || 0), 0) / runList.length : 0;
-    const runCount = runList.length;
-
-    const advice: string[] = [];
-
-    if (runCount === 0) {
-      advice.push('Start with 3 runs per week — even 15-20 minutes builds the habit');
-      advice.push('Aim for 10-15km total in your first week');
-      advice.push('Focus on consistency over speed');
-    } else {
-      const avgPace = avgSpeed > 0 ? 60 / (avgSpeed * 3.6) : 0;
-      if (totalDistance < 15) advice.push(`You ran ${totalDistance.toFixed(1)}km this week. Try increasing to 15-20km next week`);
-      else if (totalDistance < 30) advice.push(`Good week with ${totalDistance.toFixed(1)}km! Consider adding one long run`);
-      else advice.push(`Great mileage at ${totalDistance.toFixed(1)}km — make sure to include rest days`);
-
-      if (runCount < 3) advice.push(`Only ${runCount} runs this week. 3-4 runs per week is ideal for progression`);
-      if (avgPace > 6 && avgPace < 7) advice.push('Your pace is in a good range. Try interval training to improve speed');
-      else if (avgPace >= 7) advice.push('Work on form and try walk-run intervals to build speed gradually');
-      else if (avgPace > 0 && avgPace <= 5) advice.push('Your pace is strong! Focus on endurance with longer runs');
-
-      if (avgHr > 0) {
-        if (avgHr > 160) advice.push('Your average HR is high — slow down your easy runs to build aerobic base');
-        else if (avgHr < 140) advice.push('Good heart rate zone for endurance building');
-      }
-
-      advice.push(getTrainingTip(runCount, totalDistance));
-    }
-
+    const profile = await getCoachProfile(req.userId!);
+    const { start, end } = getWeekBounds();
+    const weekRuns = await getRunsForPeriod(req.userId!, start, end);
+    const allRuns = await getAllRuns(req.userId!);
+    
+    // Get running tips
+    const tips = analyzeRuns(weekRuns, profile, allRuns);
+    
+    // Get nutrition review
+    const nutritionRecs = getWeeklyNutritionReview(weekRuns, profile);
+    
+    // Save tips to database
+    const allAdvice = [...tips, ...nutritionRecs];
     const saved = [];
-    for (const content of advice) {
+    
+    for (const tip of allAdvice) {
       const { data: a } = await supabase
         .from('coach_advice')
-        .insert({ user_id: req.userId!, type: 'weekly', content })
+        .insert({
+          user_id: req.userId!,
+          type: tip.category,
+          content: `${tip.content}\n\n🔬 ${tip.reasoning}`,
+        })
         .select()
         .single();
       if (a) saved.push(a);
     }
 
-    res.json({ advice: saved });
+    // Save nutrition recommendations
+    for (const rec of nutritionRecs) {
+      const { data: nr } = await supabase
+        .from('nutrition_advice')
+        .insert({
+          user_id: req.userId!,
+          date: new Date().toISOString(),
+          category: rec.category,
+          title: rec.title,
+          content: rec.content,
+          reasoning: rec.reasoning,
+          calories_estimate: rec.caloriesEstimate,
+          protein_g: rec.proteinG,
+          carbs_g: rec.carbsG,
+          fat_g: rec.fatG,
+        })
+        .select()
+        .single();
+    }
+
+    res.json({
+      advice: saved,
+      tips: tips.length,
+      nutritionRecs: nutritionRecs.length,
+    });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-coachRouter.get('/plan', async (req: AuthRequest, res: Response) => {
+// ─── 4. Analytics endpoints ───
+coachRouter.get('/analytics/mileage-trend', async (req: AuthRequest, res: Response) => {
   try {
-    const now = new Date();
-    const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
-    const endOfWeek = new Date(startOfWeek.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const weeks = Math.min(parseInt(req.query.weeks as string) || 12, 52);
+    const allRuns = await getAllRuns(req.userId!);
+    res.json(getMileageTrend(allRuns, weeks));
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
-    const { data: runs } = await supabase
-      .from('runs')
+coachRouter.get('/analytics/pace-distribution', async (req: AuthRequest, res: Response) => {
+  try {
+    const allRuns = await getAllRuns(req.userId!);
+    res.json(getPaceDistribution(allRuns));
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+coachRouter.get('/analytics/workout-breakdown', async (req: AuthRequest, res: Response) => {
+  try {
+    const allRuns = await getAllRuns(req.userId!);
+    res.json(getWorkoutTypeBreakdown(allRuns));
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+coachRouter.get('/analytics/hr-zones', async (req: AuthRequest, res: Response) => {
+  try {
+    const profile = await getCoachProfile(req.userId!);
+    const allRuns = await getAllRuns(req.userId!);
+    res.json(getHrZoneDistribution(allRuns, profile));
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+coachRouter.get('/analytics/nutrition', async (req: AuthRequest, res: Response) => {
+  try {
+    const profile = await getCoachProfile(req.userId!);
+    
+    const { data: meals } = await supabase
+      .from('meals')
       .select('*')
       .eq('user_id', req.userId!)
-      .gte('start_date', startOfWeek.toISOString())
-      .lt('start_date', endOfWeek.toISOString())
-      .order('start_date', { ascending: true });
+      .order('date', { ascending: false })
+      .limit(200);
 
-    const runList = runs || [];
-    const totalDistance = runList.reduce((sum, r) => sum + r.distance, 0) / 1000;
-    const weeklyGoal = 20;
-    const progress = Math.min(100, (totalDistance / weeklyGoal) * 100);
+    const allRuns = await getAllRuns(req.userId!);
 
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const plan = days.map((day, i) => {
-      const d = new Date(startOfWeek.getTime() + i * 24 * 60 * 60 * 1000);
-      const runThatDay = runList.find((r) => {
-        const rd = new Date(r.start_date);
-        return rd.getDate() === d.getDate() && rd.getMonth() === d.getMonth();
-      });
-
-      return {
-        day,
-        date: d.toISOString().split('T')[0],
-        type: runThatDay ? 'Run' : getRecommendedWorkout(i, runList.length, totalDistance),
-        distance: runThatDay ? (runThatDay.distance / 1000).toFixed(2) : null,
-        completed: !!runThatDay,
-      };
-    });
-
-    res.json({ plan, weeklyGoal, progressKm: totalDistance.toFixed(1), progress });
+    res.json(getNutritionAnalytics(
+      (meals || []).map(m => ({
+        date: m.date,
+        calories: m.calories,
+        protein: m.protein || 0,
+        carbs: m.carbs || 0,
+        fat: m.fat || 0,
+        mealType: m.meal_type,
+      })),
+      allRuns,
+      profile
+    ));
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-function getRecommendedWorkout(dayIndex: number, runCount: number, totalKm: number): string {
-  if (runCount === 0) {
-    const restDays = [2, 5, 6];
-    if (restDays.includes(dayIndex)) return 'Rest';
-    return 'Easy run 3-5km';
-  }
-  const longRunDay = 6;
-  const speedDay = 2;
-  const easyDays = [0, 3];
-  if (dayIndex === longRunDay) return 'Long run 8-12km';
-  if (dayIndex === speedDay) return 'Intervals: 6x400m';
-  if (easyDays.includes(dayIndex)) return 'Easy run 5-7km';
-  return 'Rest or cross-train';
-}
+// ─── 5. Manual run entry ───
+const manualRunSchema = z.object({
+  distanceKm: z.number().positive(),
+  durationMinutes: z.number().positive(),
+  runDate: z.string().optional(),
+  runType: z.enum(['easy', 'tempo', 'interval', 'long_run', 'recovery', 'race', 'fartlek']).default('easy'),
+  perceivedEffort: z.number().min(1).max(10).optional(),
+  notes: z.string().optional(),
+});
 
-function getTrainingTip(runCount: number, totalKm: number): string {
-  if (runCount >= 4 && totalKm >= 30) return 'You are in great shape — consider a 10K race as a goal';
-  if (runCount >= 3 && totalKm >= 20) return 'Strong week! Try incorporating strides at the end of runs';
-  if (runCount >= 2) return 'Good foundation. Add one more short run to your week';
-  return 'Consistency is key — aim for 3 runs per week';
-}
+coachRouter.post('/runs', async (req: AuthRequest, res: Response) => {
+  try {
+    const data = manualRunSchema.parse(req.body);
+    const runDate = data.runDate ? new Date(data.runDate) : new Date();
+    const distanceMeters = data.distanceKm * 1000;
+    const movingTimeSeconds = data.durationMinutes * 60;
+    const averageSpeed = distanceMeters / movingTimeSeconds; // m/s
+
+    const { data: run, error } = await supabase
+      .from('runs')
+      .insert({
+        user_id: req.userId!,
+        source: 'manual',
+        distance: distanceMeters,
+        moving_time: movingTimeSeconds,
+        elapsed_time: movingTimeSeconds,
+        start_date: runDate.toISOString(),
+        average_speed: averageSpeed,
+        name: `${data.runType.charAt(0).toUpperCase() + data.runType.slice(1)} run — ${data.distanceKm.toFixed(1)}km`,
+        run_type: data.runType,
+        perceived_effort: data.perceivedEffort,
+        notes: data.notes,
+      })
+      .select()
+      .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.status(201).json(run);
+  } catch (err) {
+    if (err instanceof z.ZodError) return res.status(400).json({ error: err.errors });
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── 6. Nutrition recommendations ───
+coachRouter.get('/nutrition', async (req: AuthRequest, res: Response) => {
+  try {
+    const profile = await getCoachProfile(req.userId!);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+    
+    const todayRuns = await getRunsForPeriod(req.userId!, today, tomorrow);
+    
+    // Get existing calorie log for today
+    const { data: calorieLog } = await supabase
+      .from('calorie_logs')
+      .select('total, goal')
+      .eq('user_id', req.userId!)
+      .gte('date', today.toISOString())
+      .lt('date', tomorrow.toISOString())
+      .single();
+
+    const summary = getDailyNutritionSummary(todayRuns, profile, calorieLog || undefined);
+
+    // Also get historical nutrition recs
+    const { data: savedRecs } = await supabase
+      .from('nutrition_advice')
+      .select('*')
+      .eq('user_id', req.userId!)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    res.json({
+      ...summary,
+      savedRecommendations: savedRecs || [],
+      todayCalories: calorieLog || { total: 0, goal: profile.weightKg ? Math.round(profile.weightKg * 32) : 2000 },
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── 7. Profile management ───
+const profileSchema = z.object({
+  experienceLevel: z.enum(['beginner', 'intermediate', 'advanced']).optional(),
+  maxHeartRate: z.number().positive().optional(),
+  restingHeartRate: z.number().positive().optional(),
+  weightKg: z.number().positive().optional(),
+  goalType: z.enum(['general', '5k', '10k', 'half_marathon', 'marathon', 'weight_loss', 'speed']).optional(),
+  weeklyGoalKm: z.number().positive().optional(),
+  birthYear: z.number().int().min(1900).max(2026).optional(),
+  name: z.string().optional(),
+});
+
+coachRouter.put('/profile', async (req: AuthRequest, res: Response) => {
+  try {
+    const data = profileSchema.parse(req.body);
+    
+    const updates: Record<string, any> = {};
+    if (data.experienceLevel !== undefined) updates.experience_level = data.experienceLevel;
+    if (data.maxHeartRate !== undefined) updates.max_heart_rate = data.maxHeartRate;
+    if (data.restingHeartRate !== undefined) updates.resting_heart_rate = data.restingHeartRate;
+    if (data.weightKg !== undefined) updates.weight_kg = data.weightKg;
+    if (data.goalType !== undefined) updates.goal_type = data.goalType;
+    if (data.weeklyGoalKm !== undefined) updates.weekly_goal_km = data.weeklyGoalKm;
+    if (data.birthYear !== undefined) updates.birth_year = data.birthYear;
+    if (data.name !== undefined) updates.name = data.name;
+
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', req.userId!)
+      .select()
+      .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(profile);
+  } catch (err) {
+    if (err instanceof z.ZodError) return res.status(400).json({ error: err.errors });
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+coachRouter.get('/profile', async (req: AuthRequest, res: Response) => {
+  try {
+    const profile = await getCoachProfile(req.userId!);
+    const { data: fullProfile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', req.userId!)
+      .single();
+    
+    res.json({
+      ...profile,
+      name: fullProfile?.name || '',
+      email: fullProfile?.email,
+      createdAt: fullProfile?.created_at,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── 8. Nutrition meal plan suggestions ───
+coachRouter.post('/nutrition/meal-plan', async (req: AuthRequest, res: Response) => {
+  try {
+    const profile = await getCoachProfile(req.userId!);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+    const todayRuns = await getRunsForPeriod(req.userId!, today, tomorrow);
+    
+    const { getDailyMealPlan } = await import('../services/nutritionCoach');
+    const mealPlan = getDailyMealPlan(todayRuns, profile);
+
+    // Save meal plan suggestions
+    for (const meal of mealPlan.meals) {
+      await supabase
+        .from('meal_plans')
+        .upsert({
+          user_id: req.userId!,
+          date: today.toISOString(),
+          meal_type: meal.mealType,
+          name: meal.name,
+          description: meal.description,
+          calories: meal.calories,
+          protein_g: meal.proteinG,
+          carbs_g: meal.carbsG,
+          fat_g: meal.fatG,
+        }, { onConflict: 'user_id,date,meal_type' });
+    }
+
+    res.json(mealPlan);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── 9. Get saved meal plans ───
+coachRouter.get('/nutrition/meal-plan', async (req: AuthRequest, res: Response) => {
+  try {
+    const date = req.query.date || new Date().toISOString().split('T')[0];
+    const dayStart = new Date(date as string);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+
+    const { data: meals } = await supabase
+      .from('meal_plans')
+      .select('*')
+      .eq('user_id', req.userId!)
+      .gte('date', dayStart.toISOString())
+      .lt('date', dayEnd.toISOString())
+      .order('created_at', { ascending: true });
+
+    res.json(meals || []);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Export for use if needed
+export { getCoachProfile, getRunsForPeriod, getAllRuns, getWeekBounds };

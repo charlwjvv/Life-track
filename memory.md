@@ -228,3 +228,91 @@ Log: `/tmp/lt-sys.log`
 - **bore** — connects to Windows host IP for port 22022, blocked by Windows Firewall  
 - **localhost.run** — port 22 blocked
 - **ngrok** — requires account auth token
+
+---
+
+## Session 11 — 2026-06-07
+
+### What was built: Complete Running + Nutrition Coach Webapp
+
+Built a full scientific running coach webapp with integrated nutrition coaching, accessible from any browser.
+
+### Architecture
+
+- **Backend**: Express + TypeScript + Supabase (port 3001) — enhanced with world-class coaching engines
+- **Frontend**: `webapp/` — React + Vite + TypeScript + Chart.js, dark theme, served by Express
+- **Database**: Supabase Postgres + migration `migration_002_coach.sql`
+
+### Files Created/Modified
+
+**Backend — New Services:**
+- `backend/src/services/runningCoach.ts` — World-class running coach engine (periodization, HR zones, progressive overload, race-specific plans, analytics)
+- `backend/src/services/nutritionCoach.ts` — Nutrition coach engine (pre/post-run fueling, macro periodization, meal plans, hydration)
+
+**Backend — Modified:**
+- `backend/src/routes/coach.ts` — Completely rewritten with 14 new endpoints (dashboard, plan, analyze, runs, nutrition, profile, analytics)
+- `backend/src/index.ts` — Added static serving of webapp frontend, SPA fallback
+
+**Database:**
+- `backend/supabase/migration_002_coach.sql` — Added profile fields (experience_level, max_heart_rate, resting_heart_rate, weight_kg, goal_type, weekly_goal_km, birth_year), runs columns (source, run_type, perceived_effort, notes), new tables (nutrition_advice, meal_plans)
+
+**Frontend — New Project:**
+- `webapp/` — React + Vite + TypeScript project
+- `webapp/src/api.ts` — Full API client covering all endpoints
+- `webapp/src/styles/global.css` — Dark theme CSS (slate-based, clean, minimal)
+- `webapp/src/auth/LoginPage.tsx`, `RegisterPage.tsx` — Auth screens with demo login
+- `webapp/src/components/Layout.tsx` — Sidebar navigation
+- `webapp/src/components/Dashboard.tsx` — Combined running + nutrition dashboard
+- `webapp/src/components/WeeklyPlan.tsx` — 7-day periodized training plan
+- `webapp/src/components/CoachAdvice.tsx` — Scientific coaching tips with reasoning
+- `webapp/src/components/RunLogger.tsx` — Manual run entry form
+- `webapp/src/components/NutritionCoach.tsx` — Meal plans, pre/post fueling, macros
+- `webapp/src/components/Analytics.tsx` — Charts dashboard
+- `webapp/src/components/Profile.tsx` — User settings with HR zone reference
+- `webapp/src/components/Charts/*.tsx` — 4 chart components (mileage trend, HR zones, pace distribution, workout breakdown)
+
+### Coaching Engine Features
+
+**Running Coach:**
+- Periodization: 4-week cycles (Build → Development → Peak → Recovery)
+- Heart rate zones using Karvonen formula (with resting HR) or % of max HR
+- Progressive overload: 10% rule, 30% long run cap, hard/easy day alternation
+- Race-specific: 5K, 10K, half marathon, marathon, speed, weight loss
+- Workout types: Easy, Tempo, Interval, Long Run, Recovery, Fartlek
+- Every recommendation includes scientific reasoning
+
+**Nutrition Coach:**
+- Pre-run fueling based on run type/distance
+- Post-run recovery within 30-min window (3:1 carb:protein)
+- Daily macro periodization by training load
+- Full meal plans (breakfast, lunch, dinner, snacks) with macros
+- Training-synced: adjusts to rest days vs hard training days
+
+### How to Run
+
+```bash
+# Backend (compile + run)
+cd backend && npx tsc && node --max-old-space-size=4096 dist/index.js
+
+# Or dev mode (backend)
+cd backend && npx tsx src/index.ts
+
+# Frontend dev server (hot reload)
+cd webapp && npm run dev
+
+# Then open http://localhost:3001 (served by Express)
+# Or http://localhost:3002 (Vite dev server with HMR)
+```
+
+### Demo Credentials
+`demo@lifetrack.app` / `demo123456`
+
+### Two Accounts
+Each person registers separately. Coach adapts to each profile independently.
+
+### Webapp Build
+Frontend built to `webapp/dist/`. Express serves it at `http://localhost:3001/`.
+Rebuild if you change frontend code:
+```bash
+cd webapp && npx vite build
+```

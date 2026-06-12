@@ -65,11 +65,36 @@ npx expo start
 
 ## Backend Architecture
 
-- `src/index.ts` — Express app, listens on `0.0.0.0:3001`
+- `src/index.ts` — Express app, listens on `0.0.0.0:3001`, also serves `webapp/dist/`
 - `src/db.ts` — Supabase client (`supabase` for user queries, `supabaseAdmin` for admin)
 - `src/middleware/auth.ts` — JWT auth middleware via Supabase (`AuthRequest` extends `Request`)
 - `src/routes/` — One file per resource
 - `src/services/` — Business logic
+
+## Webapp Frontend
+
+| File | Purpose |
+|---|---|
+| `webapp/src/api.ts` | Full API client |
+| `webapp/src/components/Dashboard.tsx` | Combined running + nutrition view |
+| `webapp/src/components/WeeklyPlan.tsx` | Periodized training plan |
+| `webapp/src/components/CoachAdvice.tsx` | Scientific tips with reasoning |
+| `webapp/src/components/RunLogger.tsx` | Manual run entry |
+| `webapp/src/components/NutritionCoach.tsx` | Meal plans + macro coaching |
+| `webapp/src/components/Analytics.tsx` | Charts: mileage, HR, pace, workouts |
+| `webapp/src/components/Profile.tsx` | User settings, HR zones reference |
+
+## Webapp Run Commands
+
+```bash
+# Dev (hot reload)
+cd webapp && npm run dev    # opens http://localhost:3002
+
+# Build for production
+cd webapp && npx vite build
+
+# Served by Express at http://localhost:3001
+```
 
 ## Supabase Schema
 
